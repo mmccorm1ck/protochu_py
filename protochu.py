@@ -135,26 +135,22 @@ async def analyse(ctx: commands.Context[commands.Bot], *, msg: str) -> None:
 async def add_username(ctx: commands.Context[commands.Bot], *, msg: str) -> None:
     async with get_cursor() as (_, cur):
         try:
-            print("Create player record if none exists")
             await cur.execute("""
                 INSERT INTO players (id, name, ps_names)
                 VALUES (%s, %s, DEFAULT)
                 ON CONFLICT (id) DO NOTHING;
                 """,
                 (ctx.author.id, ctx.author.name))
-            print("retreive username list")
             await cur.execute("""
                 SELECT ps_names FROM players WHERE id = %s;
                 """,
                 (ctx.author.id,))
             current_ps_names: list[str] = cast(tuple[list[str]], await cur.fetchone())[0]
-            print(str(current_ps_names))
             if msg in current_ps_names:
                 print("username already assigned")
                 current_ps_names_str: str = '\n'.join(current_ps_names)
                 await ctx.send(f"{msg} is already set as a showdown username for {ctx.author.mention}. Current usernames are:\n{current_ps_names_str}")
                 return
-            print(f"assign username")
             current_ps_names.append(msg)
             await cur.execute("""
                 UPDATE players
@@ -170,10 +166,41 @@ async def add_username(ctx: commands.Context[commands.Bot], *, msg: str) -> None
 
 @bot.command()
 async def remove_username(ctx: commands.Context[commands.Bot], *, msg: str) -> None:
-    split_msg: list[str] = msg.split(' ')
-    for username in split_msg:
-        #remove username from database
-        await ctx.send(f"{username} has been removed as a showdown username for {ctx.author.mention}")
+    async with get_cursor() as (_, cur):
+        try:
+            await cur.execute("""
+                INSERT INTO players (id, name, ps_names)
+                VALUES (%s, %s, DEFAULT)
+                ON CONFLICT (id) DO NOTHING;
+                """,
+                (ctx.author.id, ctx.author.name))
+            await cur.execute("""
+                SELECT ps_names FROM players WHERE id = %s;
+                """,
+                (ctx.author.id,))
+            current_ps_names: list[str] = cast(tuple[list[str]], await cur.fetchone())[0]
+            if len(current_ps_names) == 0:
+                await ctx.send(f"No showdown usernames have been assigned to {ctx.author.mention}")
+                return
+            if msg not in current_ps_names:
+                current_ps_names_str: str = '\n'.join(current_ps_names)
+                await ctx.send(f"{msg} is not set as a showdown username for {ctx.author.mention}. Current usernames are:\n{current_ps_names_str}")
+                return
+            current_ps_names.remove(msg)
+            await cur.execute("""
+                UPDATE players
+                SET ps_names = %s
+                WHERE id = %s
+                """,
+                (current_ps_names, ctx.author.id))
+            current_ps_names_str: str
+            if len(current_ps_names) == 0:
+                current_ps_names_str = "All usernames have been removed"
+            else:
+                current_ps_names_str = 'Current usernames are:\n' + '\n'.join(current_ps_names)
+            await ctx.send(f"{msg} has been removed as a showdown username for {ctx.author.mention}. {current_ps_names_str}")
+        except psycopg.Error as e:
+            print(e)
 
 @bot.command()
 async def add_links(ctx: commands.Context[commands.Bot]) -> None:
