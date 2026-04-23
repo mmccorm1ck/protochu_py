@@ -2,9 +2,11 @@ import discord
 from discord.ext import commands
 import logging
 from dotenv import load_dotenv
+import psycopg
 from psycopg_pool import AsyncConnectionPool
 import contextlib
 import os
+from typing import cast
 
 load_dotenv()
 token: str | None = os.getenv('DISCORD_TOKEN')
@@ -30,29 +32,29 @@ async def on_ready() -> None:
     async with get_cursor() as (_, cur):
         print("Check servers table")
         await cur.execute("""CREATE TABLE IF NOT EXISTS servers (
-            id int PRIMARY KEY,
+            id bigint PRIMARY KEY,
             name varchar(255),
             curr_tournament int,
-            link_channels int[],
+            link_channels int[] DEFAULT array[]::int[],
             result_channel int
         );
         """)
         print("Check players table")
         await cur.execute("""CREATE TABLE IF NOT EXISTS players (
-            id int PRIMARY KEY,
+            id bigint PRIMARY KEY,
             name varchar(255),
-            ps_names varchar(255)[]
+            ps_names varchar(255)[] DEFAULT array[]::varchar[]
         );
         """)
         print("Check tournaments table")
         await cur.execute("""CREATE TABLE IF NOT EXISTS tournaments (
             id int PRIMARY KEY,
             name varchar(255),
-            server_id int REFERENCES servers,
+            server_id bigint REFERENCES servers,
             battle_format varchar(255),
             tournament_format text,
             no_of_players int,
-            player_ids int[],
+            player_ids bigint[] DEFAULT array[]::bigint[],
             start_date date,
             current_week int,
             no_of_weeks int
@@ -70,9 +72,9 @@ async def on_ready() -> None:
         await cur.execute("""CREATE TABLE IF NOT EXISTS matches (
             id int PRIMARY KEY,
             week_id int REFERENCES weeks,
-            player1_id int,
-            player2_id int,
-            winner int,
+            player1_id bigint,
+            player2_id bigint,
+            winner bigint,
             score int
         );
         """)
@@ -80,9 +82,9 @@ async def on_ready() -> None:
         await cur.execute("""CREATE TABLE IF NOT EXISTS games (
             id int PRIMARY KEY,
             match_id int REFERENCES weeks,
-            player1_id int,
-            player2_id int,
-            winner int,
+            player1_id bigint,
+            player2_id bigint,
+            winner bigint,
             replay_link varchar(255),
             result text
         );
@@ -125,10 +127,40 @@ async def analyse(ctx: commands.Context[commands.Bot], *, msg: str) -> None:
 
 @bot.command()
 async def add_username(ctx: commands.Context[commands.Bot], *, msg: str) -> None:
-    split_msg: list[str] = msg.split(' ')
-    for username in split_msg:
-        #add username to database
-        await ctx.send(f"{username} has been added as a showdown username for {ctx.author.mention}")
+    async with get_cursor() as (_, cur):
+        try:
+            print("Create player record if none exists")
+            await cur.execute("""
+                INSERT INTO players (id, name, ps_names)
+                VALUES (%s, %s, DEFAULT)
+                ON CONFLICT (id) DO NOTHING;
+                """,
+                (ctx.author.id, ctx.author.name))
+            print("retreive username list")
+            await cur.execute("""
+                SELECT ps_names FROM players WHERE id = %s;
+                """,
+                (ctx.author.id,))
+            current_ps_names: list[str] = cast(tuple[list[str]], await cur.fetchone())[0]
+            print(str(current_ps_names))
+            if msg in current_ps_names:
+                print("username already assigned")
+                current_ps_names_str: str = '\n'.join(current_ps_names)
+                await ctx.send(f"{msg} is already set as a showdown username for {ctx.author.mention}. Current usernames are:\n{current_ps_names_str}")
+                return
+            print(f"assign username")
+            current_ps_names.append(msg)
+            await cur.execute("""
+                UPDATE players
+                SET ps_names = %s
+                WHERE id = %s
+                """,
+                (current_ps_names, ctx.author.id))
+            current_ps_names_str: str = '\n'.join(current_ps_names)
+            await ctx.send(f"{msg} has been added as a showdown username for {ctx.author.mention}. Current usernames are:\n{current_ps_names_str}")
+        except psycopg.Error as e:
+            print(e)
+
 
 @bot.command()
 async def remove_username(ctx: commands.Context[commands.Bot], *, msg: str) -> None:
