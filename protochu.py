@@ -37,8 +37,8 @@ async def on_ready() -> None:
                 id bigint PRIMARY KEY,
                 name varchar(255),
                 curr_tournament int,
-                link_channels int[] DEFAULT array[]::int[],
-                result_channel int
+                link_channel bigint,
+                result_channel bigint
             );
             """)
             print("Check players table")
@@ -204,13 +204,33 @@ async def remove_username(ctx: commands.Context[commands.Bot], *, msg: str) -> N
 
 @bot.command()
 async def add_links(ctx: commands.Context[commands.Bot]) -> None:
-    #add channel to database
-    await ctx.send("Listening in channel for battle links")
-
-@bot.command()
-async def remove_links(ctx: commands.Context[commands.Bot]) -> None:
-    #remove channel from database
-    await ctx.send("Stopped listening in channel for battle links")
+    if not ctx.guild:
+        return
+    async with get_cursor() as (_, cur):
+        try:
+            await cur.execute("""
+                INSERT INTO servers (id, name, curr_tournament, link_channel, result_channel)
+                VALUES (%s, %s, -1, -1, -1)
+                ON CONFLICT (id) DO NOTHING;
+                """,
+                (ctx.guild.id, ctx.guild.name))
+            await cur.execute("""
+                SELECT link_channel FROM servers WHERE id = %s;
+                """,
+                (ctx.guild.id,))
+            current_link_channels: int = cast(tuple[int], await cur.fetchone())[0]
+            if ctx.channel.id == current_link_channels:
+                await ctx.send("Already listening in this channel for battle links")
+                return
+            await cur.execute("""
+                UPDATE servers
+                SET link_channel = %s
+                WHERE id = %s
+                """,
+                (ctx.channel.id, ctx.guild.id))
+            await ctx.send("Listening in this channel for battle links")
+        except psycopg.Error as e:
+            print(e)
 
 @bot.command()
 async def add_results(ctx: commands.Context[commands.Bot]) -> None:
