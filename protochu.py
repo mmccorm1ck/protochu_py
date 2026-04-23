@@ -218,8 +218,8 @@ async def add_links(ctx: commands.Context[commands.Bot]) -> None:
                 SELECT link_channel FROM servers WHERE id = %s;
                 """,
                 (ctx.guild.id,))
-            current_link_channels: int = cast(tuple[int], await cur.fetchone())[0]
-            if ctx.channel.id == current_link_channels:
+            current_link_channel: int = cast(tuple[int], await cur.fetchone())[0]
+            if ctx.channel.id == current_link_channel:
                 await ctx.send("Already listening in this channel for battle links")
                 return
             await cur.execute("""
@@ -234,8 +234,33 @@ async def add_links(ctx: commands.Context[commands.Bot]) -> None:
 
 @bot.command()
 async def add_results(ctx: commands.Context[commands.Bot]) -> None:
-    #add channel to database
-    await ctx.send("Channel set as output for battle results")
+    if not ctx.guild:
+        return
+    async with get_cursor() as (_, cur):
+        try:
+            await cur.execute("""
+                INSERT INTO servers (id, name, curr_tournament, link_channel, result_channel)
+                VALUES (%s, %s, -1, -1, -1)
+                ON CONFLICT (id) DO NOTHING;
+                """,
+                (ctx.guild.id, ctx.guild.name))
+            await cur.execute("""
+                SELECT result_channel FROM servers WHERE id = %s;
+                """,
+                (ctx.guild.id,))
+            current_result_channel: int = cast(tuple[int], await cur.fetchone())[0]
+            if ctx.channel.id == current_result_channel:
+                await ctx.send("Already posting battle results in this channel")
+                return
+            await cur.execute("""
+                UPDATE servers
+                SET result_channel = %s
+                WHERE id = %s
+                """,
+                (ctx.channel.id, ctx.guild.id))
+            await ctx.send("Posting battle results in this channel")
+        except psycopg.Error as e:
+            print(e)
 
 if token:
     bot.run(token=token, log_handler=handler, log_level=logging.DEBUG)
