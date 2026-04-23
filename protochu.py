@@ -6,6 +6,7 @@ import psycopg
 from psycopg_pool import AsyncConnectionPool
 import contextlib
 import os
+import sys
 from typing import cast
 
 load_dotenv()
@@ -28,70 +29,75 @@ async def get_cursor():
 
 @bot.event
 async def on_ready() -> None:
-    await pool.open(wait=True)
-    async with get_cursor() as (_, cur):
-        print("Check servers table")
-        await cur.execute("""CREATE TABLE IF NOT EXISTS servers (
-            id bigint PRIMARY KEY,
-            name varchar(255),
-            curr_tournament int,
-            link_channels int[] DEFAULT array[]::int[],
-            result_channel int
-        );
-        """)
-        print("Check players table")
-        await cur.execute("""CREATE TABLE IF NOT EXISTS players (
-            id bigint PRIMARY KEY,
-            name varchar(255),
-            ps_names varchar(255)[] DEFAULT array[]::varchar[]
-        );
-        """)
-        print("Check tournaments table")
-        await cur.execute("""CREATE TABLE IF NOT EXISTS tournaments (
-            id int PRIMARY KEY,
-            name varchar(255),
-            server_id bigint REFERENCES servers,
-            battle_format varchar(255),
-            tournament_format text,
-            no_of_players int,
-            player_ids bigint[] DEFAULT array[]::bigint[],
-            start_date date,
-            current_week int,
-            no_of_weeks int
-        );
-        """)        
-        print("Check weeks table")
-        await cur.execute("""CREATE TABLE IF NOT EXISTS weeks (
-            id int PRIMARY KEY,
-            week_no int,
-            tournament_id int REFERENCES tournaments,
-            no_of_matches int
-        );
-        """)
-        print("Check matches table")
-        await cur.execute("""CREATE TABLE IF NOT EXISTS matches (
-            id int PRIMARY KEY,
-            week_id int REFERENCES weeks,
-            player1_id bigint,
-            player2_id bigint,
-            winner bigint,
-            score int
-        );
-        """)
-        print("Check games table")
-        await cur.execute("""CREATE TABLE IF NOT EXISTS games (
-            id int PRIMARY KEY,
-            match_id int REFERENCES weeks,
-            player1_id bigint,
-            player2_id bigint,
-            winner bigint,
-            replay_link varchar(255),
-            result text
-        );
-        """)
-        print("Table checks complete")
-    if bot.user:
-        print(f"{bot.user.name}, I choose you!")
+    try:
+        await pool.open(wait=True)
+        async with get_cursor() as (_, cur):
+            print("Check servers table")
+            await cur.execute("""CREATE TABLE IF NOT EXISTS servers (
+                id bigint PRIMARY KEY,
+                name varchar(255),
+                curr_tournament int,
+                link_channels int[] DEFAULT array[]::int[],
+                result_channel int
+            );
+            """)
+            print("Check players table")
+            await cur.execute("""CREATE TABLE IF NOT EXISTS players (
+                id bigint PRIMARY KEY,
+                name varchar(255),
+                ps_names varchar(255)[] DEFAULT array[]::varchar[]
+            );
+            """)
+            print("Check tournaments table")
+            await cur.execute("""CREATE TABLE IF NOT EXISTS tournaments (
+                id int PRIMARY KEY,
+                name varchar(255),
+                server_id bigint REFERENCES servers,
+                battle_format varchar(255),
+                tournament_format text,
+                no_of_players int,
+                player_ids bigint[] DEFAULT array[]::bigint[],
+                start_date date,
+                current_week int,
+                no_of_weeks int
+            );
+            """)        
+            print("Check weeks table")
+            await cur.execute("""CREATE TABLE IF NOT EXISTS weeks (
+                id int PRIMARY KEY,
+                week_no int,
+                tournament_id int REFERENCES tournaments,
+                no_of_matches int
+            );
+            """)
+            print("Check matches table")
+            await cur.execute("""CREATE TABLE IF NOT EXISTS matches (
+                id int PRIMARY KEY,
+                week_id int REFERENCES weeks,
+                player1_id bigint,
+                player2_id bigint,
+                winner bigint,
+                score int
+            );
+            """)
+            print("Check games table")
+            await cur.execute("""CREATE TABLE IF NOT EXISTS games (
+                id int PRIMARY KEY,
+                match_id int REFERENCES weeks,
+                player1_id bigint,
+                player2_id bigint,
+                winner bigint,
+                replay_link varchar(255),
+                result text
+            );
+            """)
+            print("Table checks complete")
+    except psycopg.Error as e:
+        print(e)
+        sys.exit(1)
+    else:
+        if bot.user:
+            print(f"{bot.user.name}, I choose you!")
 
 @bot.event
 async def on_message(message: discord.Message) -> None:
